@@ -115,3 +115,68 @@ func at(nums []int, i int) int {
 	}
 	return 0
 }
+
+// Result describes how a running tag compares to what is available.
+type Result struct {
+	// Current is the tag being run. Zero value when the running tag
+	// carries no version, such as "latest".
+	Current Tag
+
+	// Latest is the newest tag of the same shape as Current.
+	Latest Tag
+
+	// Behind counts how many releases of the same shape sit between
+	// Current and Latest. Zero means up to date.
+	Behind int
+
+	// Comparable is true when Current could be compared at all. It is
+	// false for "latest", "stable", and similar unversioned tags.
+	Comparable bool
+}
+
+// UpToDate reports whether the current tag is the newest of its shape.
+func (r Result) UpToDate() bool { return r.Comparable && r.Behind == 0 }
+
+// SelectLatest determines what the newest available tag is, relative to the
+// tag currently in use.
+//
+// Only tags sharing the current tag's Shape are considered. Running "1.20"
+// will never be told to move to "1.25.3" or "1.25-alpine": those are
+// different release lines, and recommending across them produces noise.
+//
+// Prereleases are excluded unless the current tag is itself a prerelease.
+func SelectLatest(current string, available []string) Result {
+	cur, ok := Parse(current)
+	if !ok {
+		// "latest" and friends: nothing to compare against.
+		return Result{Comparable: false}
+	}
+
+	shape := cur.Shape()
+	wantPrerelease := !cur.IsStable()
+
+	var candidates []Tag
+	for _, raw := range available {
+		t, ok := Parse(raw)
+		if !ok || t.Shape() != shape {
+			continue
+		}
+		if !t.IsStable() && !wantPrerelease {
+			continue
+		}
+		candidates = append(candidates, t)
+	}
+
+	res := Result{Current: cur, Latest: cur, Comparable: true}
+
+	for _, c := range candidates {
+		if c.Compare(res.Latest) > 0 {
+			res.Latest = c
+		}
+		if c.Compare(cur) > 0 {
+			res.Behind++
+		}
+	}
+
+	return res
+}

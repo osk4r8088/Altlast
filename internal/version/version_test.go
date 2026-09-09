@@ -122,3 +122,88 @@ func equalInts(a, b []int) bool {
 	}
 	return true
 }
+
+func TestSelectLatest(t *testing.T) {
+	nginxTags := []string{
+		"1.18", "1.20", "1.22", "1.24", "1.26", "1.28",
+		"1.20.2", "1.24.0", "1.28.0",
+		"1.20-alpine", "1.28-alpine",
+		"1.29.0-rc1",
+		"latest", "stable", "mainline", "stable-bookworm",
+	}
+
+	tests := []struct {
+		name       string
+		current    string
+		available  []string
+		wantLatest string
+		wantBehind int
+		wantCmp    bool
+	}{
+		{
+			name:       "two-component tag ignores three-component and variants",
+			current:    "1.20",
+			available:  nginxTags,
+			wantLatest: "1.28",
+			wantBehind: 4, // 1.22, 1.24, 1.26, 1.28
+			wantCmp:    true,
+		},
+		{
+			name:       "variant tags compare only among themselves",
+			current:    "1.20-alpine",
+			available:  nginxTags,
+			wantLatest: "1.28-alpine",
+			wantBehind: 1,
+			wantCmp:    true,
+		},
+		{
+			name:       "already newest",
+			current:    "1.28",
+			available:  nginxTags,
+			wantLatest: "1.28",
+			wantBehind: 0,
+			wantCmp:    true,
+		},
+		{
+			name:      "unversioned tag is not comparable",
+			current:   "latest",
+			available: nginxTags,
+			wantCmp:   false,
+		},
+		{
+			name:       "prereleases excluded for stable current",
+			current:    "1.28.0",
+			available:  nginxTags,
+			wantLatest: "1.28.0",
+			wantBehind: 0,
+			wantCmp:    true,
+		},
+		{
+			name:       "no comparable tags leaves current as latest",
+			current:    "2.5.1",
+			available:  []string{"latest", "stable"},
+			wantLatest: "2.5.1",
+			wantBehind: 0,
+			wantCmp:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SelectLatest(tt.current, tt.available)
+
+			if got.Comparable != tt.wantCmp {
+				t.Fatalf("Comparable = %v, want %v", got.Comparable, tt.wantCmp)
+			}
+			if !tt.wantCmp {
+				return
+			}
+			if got.Latest.Raw != tt.wantLatest {
+				t.Errorf("Latest = %q, want %q", got.Latest.Raw, tt.wantLatest)
+			}
+			if got.Behind != tt.wantBehind {
+				t.Errorf("Behind = %d, want %d", got.Behind, tt.wantBehind)
+			}
+		})
+	}
+}
