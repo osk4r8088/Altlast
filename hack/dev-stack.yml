@@ -1,0 +1,38 @@
+# Deliberately outdated containers used as test fixtures for Altlast.
+# Created but never started: we only read container metadata.
+name: altlast-devstack
+
+services:
+  gitea:
+    image: gitea/gitea:1.20.0
+    entrypoint: [""]
+    command: ["sleep", "infinity"]
+
+  postgres:
+    image: postgres:13.4
+    entrypoint: [""]
+    command: ["sleep", "infinity"]
+
+  nginx:
+    image: nginx:1.20
+    entrypoint: [""]
+    command: ["sleep", "infinity"]
+
+  caddy:
+    image: caddy:latest
+    entrypoint: [""]
+    command: ["sleep", "infinity"]
+
+  alpine:
+    image: alpine:3.14
+    command: ["sleep", "infinity"]
+
+  jellyfin:
+    image: lscr.io/linuxserver/jellyfin:10.8.0
+    entrypoint: [""]
+    command: ["sleep", "infinity"]
+
+  vaultwarden:
+    image: vaultwarden/server:1.29.0
+    entrypoint: [""]
+    command: ["sleep", "infinity"]
