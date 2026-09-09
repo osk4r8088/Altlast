@@ -34,9 +34,13 @@ type Asset struct {
 	// how we detect that a moving tag such as "latest" has changed.
 	Digest string `json:"digest,omitempty"`
 
-	// Version is what we believe the asset is running. For containers this
-	// starts as the tag; later milestones may refine it via a probe.
+	// Version is what we believe the asset is running. Normally the tag,
+	// but for unversioned tags such as "latest" we fall back to the OCI
+	// version label baked into the image.
 	Version string `json:"version,omitempty"`
+
+	// VersionSource records where Version came from: "tag" or "oci-label".
+	VersionSource string `json:"version_source,omitempty"`
 
 	// State is the container state: running, exited, created.
 	State string `json:"state,omitempty"`

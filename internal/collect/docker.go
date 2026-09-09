@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/osk4r8088/altlast/internal/version"
 )
 
 // DefaultDockerSocket is where the Docker daemon listens on Linux.
@@ -97,23 +99,57 @@ func (c *DockerCollector) Collect(ctx context.Context) ([]Asset, error) {
 	return assets, nil
 }
 
+// ociVersionLabel is the standard label carrying an image's own version.
+const ociVersionLabel = "org.opencontainers.image.version"
+
 // toAsset converts Docker's representation into ours.
 func (dc dockerContainer) toAsset() Asset {
 	ref := ParseImage(dc.Image)
+	ver, src := resolveVersion(ref.Tag, dc.Labels)
 
 	return Asset{
-		Kind:       KindContainer,
-		Name:       containerName(dc.Names),
-		Registry:   ref.Registry,
-		Repository: ref.Repository,
-		Tag:        ref.Tag,
-		ImageID:    dc.ImageID,
-		Digest:     ref.Digest,
-		Version:    ref.Tag,
-		State:      dc.State,
-		Labels:     dc.Labels,
+		Kind:          KindContainer,
+		Name:          containerName(dc.Names),
+		Registry:      ref.Registry,
+		Repository:    ref.Repository,
+		Tag:           ref.Tag,
+		ImageID:       dc.ImageID,
+		Digest:        ref.Digest,
+		Version:       ver,
+		VersionSource: src,
+		State:         dc.State,
+		Labels:        dc.Labels,
 	}
 }
+
+// resolveVersion decides what version a container is running.
+//
+// The tag is used when it carries version information. When it does not,
+// as with "latest" or "stable", the OCI version label is consulted: it
+// describes the image actually on disk, so it reveals staleness that a
+// moving tag hides.
+func resolveVersion(tag string, labels map[string]string) (version string, source string) {
+	if _, ok := parseable(tag); ok {
+		return tag, "tag"
+	}
+
+	label := labels[ociVersionLabel]
+	if label == "" {
+		return tag, "tag"
+	}
+
+	// Strip a leading "v" so the value compares against registry tags,
+	// which conventionally omit it.
+	label = strings.TrimPrefix(label, "v")
+	if _, ok := parseable(label); !ok {
+		return tag, "tag"
+	}
+
+	return label, "oci-label"
+}
+
+// parseable reports whether s carries version information.
+func parseable(s string) (version.Tag, bool) { return version.Parse(s) }
 
 // containerName picks a usable name. Docker returns names with a leading
 // slash for historical reasons, and a container can have several.
