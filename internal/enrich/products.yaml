@@ -1,0 +1,69 @@
+# Maps container repositories to endoflife.date product identifiers.
+#
+# Only about half of a typical stack has published lifecycle data. Absence
+# is a normal, reportable state, not an error: better to say "unknown" than
+# to imply something is supported when nobody knows.
+#
+# Contributions welcome. Verify a slug exists before adding it:
+#   curl -s https://endoflife.date/api/v1/products/ | jq -r '.result[].name'
+
+version: 1
+
+products:
+  # Databases
+  - repository: library/postgres
+    product: postgresql
+  - repository: library/mysql
+    product: mysql
+  - repository: library/mariadb
+    product: mariadb
+  - repository: library/redis
+    product: redis
+  - repository: library/mongo
+    product: mongodb
+
+  # Web servers and proxies
+  - repository: library/nginx
+    product: nginx
+  - repository: library/caddy
+    product: caddy
+  - repository: library/httpd
+    product: apache-http-server
+  - repository: library/haproxy
+    product: haproxy
+  - repository: traefik
+    product: traefik
+
+  # Base images
+  - repository: library/alpine
+    product: alpine-linux
+  - repository: library/debian
+    product: debian
+  - repository: library/ubuntu
+    product: ubuntu
+
+  # Runtimes
+  - repository: library/node
+    product: nodejs
+  - repository: library/python
+    product: python
+  - repository: library/golang
+    product: go
+  - repository: library/php
+    product: php
+  - repository: library/openjdk
+    product: java
+
+  # Infrastructure
+  - repository: library/rabbitmq
+    product: rabbitmq
+  - repository: grafana/grafana
+    product: grafana
+  - repository: prom/prometheus
+    product: prometheus
+  - repository: library/consul
+    product: consul
+  - repository: library/vault
+    product: vault
+  - repository: elasticsearch
+    product: elasticsearch
