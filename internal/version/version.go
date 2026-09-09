@@ -25,6 +25,12 @@ type Tag struct {
 	// Variant is a build flavor: alpine, bookworm, alpine3.18.
 	// Two tags with different variants are never compared.
 	Variant string
+
+	// CalVer marks a calendar version such as 2021.12.16 or 2024.10.1.
+	// Calendar and semantic versions share a numeric shape but are
+	// different schemes entirely, and comparing across them is
+	// meaningless: 2021.12.16 is not "newer" than 10.8.0.
+	CalVer bool
 }
 
 // tagPattern matches an optional "v", one or more dot-separated numbers, and
@@ -62,6 +68,14 @@ func Parse(s string) (Tag, bool) {
 		}
 	}
 
+	// A four-digit leading component in a plausible year range means
+	// calendar versioning. Software with a major version above 1970 does
+	// not exist, so the heuristic is safe.
+	if len(t.Nums) >= 2 && t.Nums[0] >= 1970 && t.Nums[0] <= 2999 &&
+		len(strings.SplitN(m[2], ".", 2)[0]) == 4 {
+		t.CalVer = true
+	}
+
 	return t, true
 }
 
@@ -72,8 +86,13 @@ func Parse(s string) (Tag, bool) {
 //	"1.20" and "1.25.3"             -> different precision, not comparable
 //	"1.20-alpine" and "1.25-alpine" -> same shape, comparable
 //	"1.20" and "1.20-alpine"        -> different variant, not comparable
+//	"10.8.0" and "2021.12.16"       -> different scheme, not comparable
 func (t Tag) Shape() string {
-	return t.Prefix + "|" + strconv.Itoa(len(t.Nums)) + "|" + t.Variant
+	scheme := "sem"
+	if t.CalVer {
+		scheme = "cal"
+	}
+	return t.Prefix + "|" + scheme + "|" + strconv.Itoa(len(t.Nums)) + "|" + t.Variant
 }
 
 // IsStable reports whether the tag is a stable release rather than a

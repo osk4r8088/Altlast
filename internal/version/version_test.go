@@ -79,6 +79,7 @@ func TestShape(t *testing.T) {
 	differ("1.20", "1.25.3")
 	differ("1.20", "1.20-alpine")
 	differ("1.2.3", "v1.2.3")
+	differ("10.8.0", "2021.12.16")
 }
 
 func TestCompare(t *testing.T) {
@@ -184,6 +185,17 @@ func TestSelectLatest(t *testing.T) {
 			available:  []string{"latest", "stable"},
 			wantLatest: "2.5.1",
 			wantBehind: 0,
+			wantCmp:    true,
+		},
+		{
+			name:    "calendar tags never beat semver tags",
+			current: "10.8.0",
+			available: []string{
+				"10.8.0", "10.9.11", "10.10.7",
+				"2021.12.16", "2024.01.02",
+			},
+			wantLatest: "10.10.7",
+			wantBehind: 2,
 			wantCmp:    true,
 		},
 	}
