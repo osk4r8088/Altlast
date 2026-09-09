@@ -1,12 +1,9 @@
 # Altlast
 
-> *Altlast* (German): contaminated ground left behind by past activity.
-> Also: the legacy burden nobody wants to be responsible for.
-
 Altlast keeps a register of everything you run and how old it is. It knows the
 version, how many releases behind you are, and whether that version still
-receives security fixes. It never changes anything: it reads, records, and
-tells you what deserves an hour of your Saturday.
+receives security fixes. It doesnt change anything; it reads, records, and
+prioritizes and cuts down time for you fixing stuff.
 
 **Status: early development. Usable, incomplete.**
 
@@ -19,7 +16,7 @@ usually the deciding one. Altlast asks whether the gap matters.
 "98 releases behind" is a number. "Stopped receiving security fixes in
 November 2025" is a decision.
 
-## What works today
+## What works
 
 - Discovers containers from the Docker socket
 - Resolves the newest comparable tag from the registry, with on-disk caching
