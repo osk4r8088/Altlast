@@ -11,6 +11,7 @@ prioritizes and cuts down time for you fixing stuff.
 
 Update notifier tell you a newer tag exists. Which is a useful fact but not
 always the deciding one. Altlast asks whether the gap is relevant.
+
 eg. "98 releases behind" vs "Stopped receiving security fixes in November 2025"
 
 ## What works
