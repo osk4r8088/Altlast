@@ -7,6 +7,7 @@ import "context"
 // Kind identifies what sort of thing an Asset is.
 type Kind string
 
+// Asset kinds. Containers come first; hosts and kernels arrive at M7.
 const (
 	KindContainer Kind = "container"
 	KindHostOS    Kind = "host_os"
