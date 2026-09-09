@@ -107,7 +107,8 @@ func (dc dockerContainer) toAsset() Asset {
 		Registry:   ref.Registry,
 		Repository: ref.Repository,
 		Tag:        ref.Tag,
-		Digest:     firstNonEmpty(ref.Digest, dc.ImageID),
+		ImageID:    dc.ImageID,
+		Digest:     ref.Digest,
 		Version:    ref.Tag,
 		State:      dc.State,
 		Labels:     dc.Labels,
@@ -121,13 +122,4 @@ func containerName(names []string) string {
 		return "<unnamed>"
 	}
 	return strings.TrimPrefix(names[0], "/")
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }

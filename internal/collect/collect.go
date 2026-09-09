@@ -26,8 +26,12 @@ type Asset struct {
 	Repository string `json:"repository,omitempty"`
 	Tag        string `json:"tag,omitempty"`
 
-	// Digest identifies the exact image content, independent of the tag.
-	// It is how we detect that a "latest" tag has moved.
+	// ImageID is Docker's local content ID. It is stable on this host but
+	// is NOT the digest the registry serves.
+	ImageID string `json:"image_id,omitempty"`
+
+	// Digest is the registry digest (RepoDigest). Populated at M4; it is
+	// how we detect that a moving tag such as "latest" has changed.
 	Digest string `json:"digest,omitempty"`
 
 	// Version is what we believe the asset is running. For containers this
