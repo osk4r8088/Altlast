@@ -9,12 +9,9 @@ prioritizes and cuts down time for you fixing stuff.
 
 ## Why not just an update notifier?
 
-Update notifiers tell you a newer tag exists. That is a useful fact and not
-usually the deciding one. Altlast asks whether the gap matters.
-
-
-"98 releases behind" is a number. "Stopped receiving security fixes in
-November 2025" is a decision.
+Update notifier tell you a newer tag exists. Which is a useful fact but not
+always the deciding one. Altlast asks whether the gap is relevant.
+eg. "98 releases behind" vs "Stopped receiving security fixes in November 2025"
 
 ## What works
 
