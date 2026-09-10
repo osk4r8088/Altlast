@@ -1,0 +1,228 @@
+:root {
+  --bg: #fbfaf8;
+  --surface: #ffffff;
+  --border: #e3ded6;
+  --text: #1c1a17;
+  --text-dim: #6f6960;
+  --accent: #8a6d3b;
+
+  --eol: #a1342b;
+  --eol-bg: #fbeae8;
+  --ending: #9a6410;
+  --ending-bg: #fdf2e0;
+  --ok: #3f6b46;
+  --ok-bg: #ecf3ec;
+  --unknown: #6f6960;
+  --unknown-bg: #f2efea;
+
+  --mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16150f;
+    --surface: #1e1c16;
+    --border: #33302a;
+    --text: #ede8dd;
+    --text-dim: #8f887c;
+    --accent: #c9a86a;
+
+    --eol: #e8837a;
+    --eol-bg: #2e1a17;
+    --ending: #d9a969;
+    --ending-bg: #2b2317;
+    --ok: #8fbf96;
+    --ok-bg: #1a251b;
+    --unknown: #8f887c;
+    --unknown-bg: #262319;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1.25rem 2rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.brand-name {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  font-size: 1.15rem;
+}
+
+.brand-sub {
+  margin-left: 0.6rem;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.meta {
+  display: flex;
+  gap: 1.25rem;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.meta .version { font-family: var(--mono); }
+
+main { padding: 2rem; max-width: 1400px; }
+
+.summary {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 2rem;
+}
+
+.stat {
+  flex: 1 1 140px;
+  padding: 1rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.stat-value {
+  display: block;
+  font-size: 2rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.stat-label {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+.stat-critical { border-left: 3px solid var(--eol); }
+.stat-critical .stat-value { color: var(--eol); }
+.stat-warn { border-left: 3px solid var(--ending); }
+.stat-warn .stat-value { color: var(--ending); }
+.stat-muted .stat-value { color: var(--text-dim); }
+
+table.assets {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.assets th {
+  text-align: left;
+  padding: 0.7rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.assets td {
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: baseline;
+}
+
+.assets tbody tr:last-child td { border-bottom: none; }
+.assets tbody tr:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+
+.row-eol { background: color-mix(in srgb, var(--eol) 4%, transparent); }
+
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--mono); font-size: 0.85rem; }
+.dim { color: var(--text-dim); }
+.name { font-weight: 500; }
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.badge-eol { background: var(--eol-bg); color: var(--eol); }
+.badge-ending { background: var(--ending-bg); color: var(--ending); }
+.badge-supported { background: var(--ok-bg); color: var(--ok); }
+.badge-unknown { background: var(--unknown-bg); color: var(--unknown); }
+
+.detail {
+  margin-left: 0.5rem;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  font-family: var(--mono);
+}
+
+.chip {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+
+/* Age ramp. Deliberately not red: red is reserved for EOL and, later,
+   known exploited vulnerabilities. Being behind is not the same as being
+   unsupported. */
+.behind { font-weight: 500; }
+.behind-none { color: var(--ok); }
+.behind-low { color: var(--text-dim); }
+.behind-mid { color: var(--accent); }
+.behind-high { color: var(--ending); font-weight: 600; }
+
+.note {
+  margin-top: 1.5rem;
+  padding: 0.85rem 1rem;
+  border-left: 2px solid var(--border);
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  max-width: 70ch;
+}
+
+.empty { padding: 4rem 0; text-align: center; color: var(--text-dim); }
+.empty h1 { color: var(--text); font-weight: 600; }
+.empty code {
+  font-family: var(--mono);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.1rem 0.4rem;
+}
+
+footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1.5rem 2rem;
+  margin-top: 3rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}

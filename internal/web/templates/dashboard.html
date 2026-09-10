@@ -1,0 +1,81 @@
+{{ define "content" }}
+
+{{ if not .HasScan }}
+  <section class="empty">
+    <h1>No scans yet</h1>
+    <p>Run <code>altlast scan</code> to populate the register.</p>
+  </section>
+{{ else }}
+
+<section class="summary">
+  <div class="stat stat-critical">
+    <span class="stat-value">{{ .Summary.EOL }}</span>
+    <span class="stat-label">past end of life</span>
+  </div>
+  <div class="stat stat-warn">
+    <span class="stat-value">{{ .Summary.Ending }}</span>
+    <span class="stat-label">EOL approaching</span>
+  </div>
+  <div class="stat">
+    <span class="stat-value">{{ .Summary.Behind }}</span>
+    <span class="stat-label">behind latest</span>
+  </div>
+  <div class="stat stat-muted">
+    <span class="stat-value">{{ .Summary.Unknown }}</span>
+    <span class="stat-label">no lifecycle data</span>
+  </div>
+  <div class="stat">
+    <span class="stat-value">{{ .Summary.Total }}</span>
+    <span class="stat-label">assets tracked</span>
+  </div>
+</section>
+
+<table class="assets">
+  <thead>
+    <tr>
+      <th>Asset</th>
+      <th>Image</th>
+      <th>Version</th>
+      <th>Latest</th>
+      <th class="num">Behind</th>
+      <th>Support</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{ range .Assets }}
+    <tr class="row-{{ .SupportState }}">
+      <td class="name">
+        {{ .Name }}
+        {{ if ne .State "running" }}<span class="chip chip-idle">{{ .State }}</span>{{ end }}
+      </td>
+      <td class="mono dim">{{ .Repository }}</td>
+      <td class="mono">
+        {{ .Version }}
+        {{ if .FromLabel }}<span class="chip" title="version read from the OCI image label, not the tag">label</span>{{ end }}
+      </td>
+      <td class="mono dim">{{ .Latest }}</td>
+      <td class="num">
+        {{ if .HasBehind }}
+          <span class="behind behind-{{ .BehindBand }}">{{ .Behind }}</span>
+        {{ else }}
+          <span class="dim">&ndash;</span>
+        {{ end }}
+      </td>
+      <td>
+        <span class="badge badge-{{ .SupportState }}">{{ .SupportText }}</span>
+        {{ if .SupportDetail }}<span class="detail">{{ .SupportDetail }}</span>{{ end }}
+      </td>
+    </tr>
+    {{ end }}
+  </tbody>
+</table>
+
+{{ if .Summary.Unknown }}
+<p class="note">
+  {{ .Summary.Unknown }} of {{ .Summary.Total }} assets have no published lifecycle
+  data. endoflife.date tracks mainstream products; absence means unknown, not safe.
+</p>
+{{ end }}
+
+{{ end }}
+{{ end }}
