@@ -73,6 +73,17 @@ body {
   font-size: 0.85rem;
 }
 
+.age {
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.chip-note { border-color: var(--accent); color: var(--accent); }
+
+.row-eol .age { color: var(--eol); font-weight: 500; }
+
 .meta {
   display: flex;
   gap: 1.25rem;

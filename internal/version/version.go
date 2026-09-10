@@ -33,9 +33,10 @@ type Tag struct {
 	CalVer bool
 }
 
-// tagPattern matches an optional "v", one or more dot-separated numbers, and
-// an optional suffix introduced by "-".
-var tagPattern = regexp.MustCompile(`^(v)?(\d+(?:\.\d+)*)(?:-(.+))?$`)
+// A suffix may be introduced by a separator or run straight on from the
+// digits, as LinuxServer does with "10.11.11ubu2404-ls36". It must begin
+// with a letter, so "latest" and "stable-bookworm" still fail to parse.
+var tagPattern = regexp.MustCompile(`^(v)?(\d+(?:\.\d+)*)(?:[-_.]?([A-Za-z].*))?$`)
 
 // prereleasePattern recognises suffixes that mean "not yet stable".
 var prereleasePattern = regexp.MustCompile(`^(rc|alpha|beta|pre|dev|snapshot|nightly)[.-]?\d*$`)
@@ -151,6 +152,13 @@ type Result struct {
 	// Comparable is true when Current could be compared at all. It is
 	// false for "latest", "stable", and similar unversioned tags.
 	Comparable bool
+
+	// NewerMajor names a higher major line that exists but was excluded
+	// by shape filtering. Zero when there is none.
+	NewerMajor int
+
+	// NewerMajorTag is an example tag from that line.
+	NewerMajorTag string
 }
 
 // UpToDate reports whether the current tag is the newest of its shape.
@@ -197,5 +205,59 @@ func SelectLatest(current string, available []string) Result {
 		}
 	}
 
+	res.NewerMajor, res.NewerMajorTag = findNewerMajor(cur, res.Latest, available, wantPrerelease)
+
 	return res
+}
+
+// findNewerMajor looks for a higher major line that shape filtering excluded,
+// so a conservative recommendation cannot silently hide a whole release line.
+//
+// The rule is deliberately strict, because a wrong answer here is worse than
+// no answer. Everything below is a filter learned from real registry data:
+//
+//   - Datestamps such as 20260805 and build counters such as 667 are not
+//     major versions. Only small numbers within a step or two of the current
+//     major qualify.
+//   - Calendar versions never count, since 2024 is not "newer" than 10.
+//   - A line already covered by the recommendation is not news.
+//   - The candidate must look like a real release line, not a stray tag: at
+//     least two numeric components, or an exact match on the majorSeen count.
+func findNewerMajor(cur, latest Tag, available []string, wantPrerelease bool) (int, string) {
+	if len(cur.Nums) == 0 || cur.CalVer {
+		return 0, ""
+	}
+
+	curMajor := cur.Nums[0]
+
+	// A plausible next line is at most two majors ahead. Jellyfin 10 to 12
+	// qualifies; 10 to 667 does not.
+	const maxJump = 2
+
+	best, bestTag := 0, ""
+
+	for _, raw := range available {
+		t, ok := Parse(raw)
+		if !ok || t.CalVer || len(t.Nums) < 2 {
+			continue
+		}
+		if !t.IsStable() && !wantPrerelease {
+			continue
+		}
+
+		major := t.Nums[0]
+		if major <= curMajor || major > curMajor+maxJump {
+			continue
+		}
+		if major > best {
+			best, bestTag = major, t.Raw
+		}
+	}
+
+	// Silent when the recommendation already reaches that line.
+	if best > 0 && len(latest.Nums) > 0 && best <= latest.Nums[0] {
+		return 0, ""
+	}
+
+	return best, bestTag
 }

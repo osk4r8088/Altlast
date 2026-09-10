@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/osk4r8088/altlast/internal/store"
@@ -76,12 +77,16 @@ type assetRow struct {
 	Name          string
 	Repository    string
 	Version       string
+	Age           string
+	AgeTitle      string
+	NewerMajor    int64
 	FromLabel     bool
 	Latest        string
 	Behind        int64
 	HasBehind     bool
 	BehindBand    string
 	State         string
+	ShowState     bool
 	SupportState  string
 	SupportText   string
 	SupportDetail string
@@ -146,6 +151,7 @@ func buildRow(a store.AssetView) assetRow {
 		FromLabel:    a.VersionSource == "oci-label",
 		Latest:       a.Latest,
 		State:        a.State,
+		ShowState:    notableState(a.State),
 		SupportState: a.SupportState,
 	}
 
@@ -170,14 +176,46 @@ func buildRow(a store.AssetView) assetRow {
 		}
 	case "supported":
 		row.SupportText = "supported"
-		if a.EOLCycle != "" {
+		// The cycle is only worth showing when it says something the
+		// version does not. "cycle 2" beside version 2.11.4 is noise.
+		if a.EOLCycle != "" && !strings.HasPrefix(a.Version, a.EOLCycle) {
 			row.SupportDetail = "cycle " + a.EOLCycle
 		}
 	default:
 		row.SupportText = "unknown"
 	}
 
+	// Two different durations, and the distinction matters. For an asset
+	// past EOL, the useful number is how long it has been unsupported,
+	// which is a fact about the software. Otherwise fall back to how long
+	// we have been watching it, which is a fact about us.
+	if a.SupportState == "eol" && a.EOLDate != "" {
+		if eol, err := time.Parse("2006-01-02", a.EOLDate); err == nil {
+			row.Age = humanDuration(time.Since(eol))
+			row.AgeTitle = "unsupported since " + a.EOLDate
+		}
+	} else if seen, err := time.Parse(time.RFC3339, a.FirstSeen); err == nil {
+		row.Age = humanDuration(time.Since(seen))
+		row.AgeTitle = "first observed " + a.FirstSeen
+	}
+
+	if a.NewerMajor.Valid {
+		row.NewerMajor = a.NewerMajor.Int64
+	}
+
 	return row
+}
+
+// notableState reports whether a container state is worth showing. Running
+// is the norm and created is unremarkable; only states suggesting something
+// went wrong earn a chip.
+func notableState(state string) bool {
+	switch state {
+	case "exited", "dead", "paused", "restarting":
+		return true
+	default:
+		return false
+	}
 }
 
 // behindBand buckets how far behind an asset is, for colouring. The
@@ -213,6 +251,23 @@ func humanAge(ts string) string {
 		return fmt.Sprintf("%d h ago", int(d.Hours()))
 	default:
 		return fmt.Sprintf("%d days ago", int(d.Hours()/24))
+	}
+}
+
+// humanDuration renders a duration at a coarseness suited to the scale.
+// Precision beyond this is false confidence: nobody needs to know an asset
+// has been unsupported for 1,384 days rather than roughly four years.
+func humanDuration(d time.Duration) string {
+	days := int(d.Hours() / 24)
+	switch {
+	case days < 1:
+		return "today"
+	case days < 60:
+		return fmt.Sprintf("%dd", days)
+	case days < 730:
+		return fmt.Sprintf("%dmo", days/30)
+	default:
+		return fmt.Sprintf("%.1fy", float64(days)/365)
 	}
 }
 

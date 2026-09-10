@@ -10,7 +10,9 @@ import (
 // Release is what a Resolver reports back.
 type Release struct {
 	// Latest is the newest tag of the same shape as the current one.
-	Latest string
+	Latest        string
+	NewerMajor    int
+	NewerMajorTag string
 
 	// Behind counts releases newer than the current one.
 	Behind int

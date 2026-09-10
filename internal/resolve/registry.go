@@ -53,6 +53,8 @@ func (r *RegistryResolver) Resolve(ctx context.Context, registry, repository, cu
 		CheckedAt:  time.Now(),
 	}
 	if sel.Comparable {
+		rel.NewerMajor = sel.NewerMajor
+		rel.NewerMajorTag = sel.NewerMajorTag
 		rel.Latest = sel.Latest.Raw
 	}
 

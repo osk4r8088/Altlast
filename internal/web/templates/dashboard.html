@@ -39,6 +39,7 @@
       <th>Latest</th>
       <th class="num">Behind</th>
       <th>Support</th>
+      <th class="num">For</th>
     </tr>
   </thead>
   <tbody>
@@ -46,14 +47,17 @@
     <tr class="row-{{ .SupportState }}">
       <td class="name">
         {{ .Name }}
-        {{ if ne .State "running" }}<span class="chip chip-idle">{{ .State }}</span>{{ end }}
+        {{ if .ShowState }}<span class="chip chip-idle">{{ .State }}</span>{{ end }}
       </td>
       <td class="mono dim">{{ .Repository }}</td>
       <td class="mono">
         {{ .Version }}
         {{ if .FromLabel }}<span class="chip" title="version read from the OCI image label, not the tag">label</span>{{ end }}
       </td>
-      <td class="mono dim">{{ .Latest }}</td>
+      <td class="mono dim">
+        {{ .Latest }}
+        {{ if .NewerMajor }}<span class="chip chip-note" title="a {{ .NewerMajor }}.x line exists but is not comparable to your tag">{{ .NewerMajor }}.x</span>{{ end }}
+      </td>
       <td class="num">
         {{ if .HasBehind }}
           <span class="behind behind-{{ .BehindBand }}">{{ .Behind }}</span>
@@ -65,6 +69,7 @@
         <span class="badge badge-{{ .SupportState }}">{{ .SupportText }}</span>
         {{ if .SupportDetail }}<span class="detail">{{ .SupportDetail }}</span>{{ end }}
       </td>
+      <td class="num age" title="{{ .AgeTitle }}">{{ .Age }}</td>
     </tr>
     {{ end }}
   </tbody>

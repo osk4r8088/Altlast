@@ -218,10 +218,12 @@ type Observation struct {
 	Version       string
 	VersionSource string
 
-	Latest       string
-	Behind       int
-	Comparable   bool
-	ResolveError string
+	Latest        string
+	Behind        int
+	Comparable    bool
+	NewerMajor    int
+	NewerMajorTag string
+	ResolveError  string
 
 	SupportState string
 	EOLProduct   string
@@ -270,16 +272,23 @@ func (s *Store) RecordObservation(ctx context.Context, scanID int64, o Observati
 		eolDays = o.EOLDays
 	}
 
+	// Likewise, zero means "no higher major line", not "major line 0".
+	var newerMajor any
+	if o.NewerMajor > 0 {
+		newerMajor = o.NewerMajor
+	}
+
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO observations (
 			scan_id, asset_id, registry, repository, tag, image_id, digest,
 			state, version, version_source, latest, behind, comparable,
-			resolve_error, support_state, eol_product, eol_cycle, eol_date,
-			eol_days, eol_error, observed_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			resolve_error, newer_major, newer_major_tag, support_state,
+			eol_product, eol_cycle, eol_date, eol_days, eol_error, observed_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		scanID, assetID, o.Registry, o.Repository, o.Tag, o.ImageID, o.Digest,
 		o.State, o.Version, o.VersionSource, nullable(o.Latest), behind,
 		boolToInt(o.Comparable), nullable(o.ResolveError),
+		newerMajor, nullable(o.NewerMajorTag),
 		nullable(o.SupportState), nullable(o.EOLProduct), nullable(o.EOLCycle),
 		nullable(o.EOLDate), eolDays, nullable(o.EOLError), ts)
 	if err != nil {
@@ -350,6 +359,7 @@ type AssetView struct {
 
 	Latest       string
 	Behind       sql.NullInt64
+	NewerMajor   sql.NullInt64
 	Comparable   bool
 	ResolveError string
 
@@ -376,7 +386,8 @@ func (s *Store) AssetsForScan(ctx context.Context, scanID int64) ([]AssetView, e
 			COALESCE(o.resolve_error, ''),
 			COALESCE(o.support_state, 'unknown'),
 			COALESCE(o.eol_product, ''), COALESCE(o.eol_cycle, ''),
-			COALESCE(o.eol_date, ''), o.eol_days,
+			COALESCE(o.eol_date, ''), o.eol_days, o.newer_major,
+      
 			COALESCE(o.state, '')
 		FROM observations o
 		JOIN assets a ON a.id = o.asset_id
@@ -407,7 +418,7 @@ func (s *Store) AssetsForScan(ctx context.Context, scanID int64) ([]AssetView, e
 			&v.Version, &v.VersionSource,
 			&v.Latest, &v.Behind, &comparable, &v.ResolveError,
 			&v.SupportState, &v.EOLProduct, &v.EOLCycle,
-			&v.EOLDate, &v.EOLDays, &v.State)
+			&v.EOLDate, &v.EOLDays, &v.NewerMajor, &v.State)
 		if err != nil {
 			return nil, fmt.Errorf("scanning asset row: %w", err)
 		}

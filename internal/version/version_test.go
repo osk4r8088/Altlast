@@ -22,6 +22,13 @@ func TestParse(t *testing.T) {
 		{in: "1.25.3-alpine3.18", ok: true, nums: []int{1, 25, 3}, variant: "alpine3.18"},
 		{in: "1.20.0-rc1", ok: true, nums: []int{1, 20, 0}, prerelease: "rc1"},
 		{in: "2.0.0-beta.2", ok: true, nums: []int{2, 0, 0}, prerelease: "beta.2"},
+
+		// LinuxServer runs the suffix straight on from the digits with no
+		// separator. Before this was handled, every such tag was silently
+		// discarded and a whole 12.x line was invisible.
+		{in: "10.11.11ubu2404-ls36", ok: true, nums: []int{10, 11, 11}, variant: "ubu2404-ls36"},
+		{in: "12.0ubu2604-ls48", ok: true, nums: []int{12, 0}, variant: "ubu2604-ls48"},
+
 		{in: "latest", ok: false},
 		{in: "stable", ok: false},
 		{in: "mainline", ok: false},
@@ -112,18 +119,6 @@ func TestCompare(t *testing.T) {
 	}
 }
 
-func equalInts(a, b []int) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 func TestSelectLatest(t *testing.T) {
 	nginxTags := []string{
 		"1.18", "1.20", "1.22", "1.24", "1.26", "1.28",
@@ -134,12 +129,13 @@ func TestSelectLatest(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		current    string
-		available  []string
-		wantLatest string
-		wantBehind int
-		wantCmp    bool
+		name           string
+		current        string
+		available      []string
+		wantLatest     string
+		wantBehind     int
+		wantCmp        bool
+		wantNewerMajor int
 	}{
 		{
 			name:       "two-component tag ignores three-component and variants",
@@ -198,6 +194,19 @@ func TestSelectLatest(t *testing.T) {
 			wantBehind: 2,
 			wantCmp:    true,
 		},
+		{
+			// A shape-filtered recommendation must never silently hide a
+			// whole major line. It is reported, not recommended.
+			name:    "higher major line is noted but not recommended",
+			current: "10.8.0",
+			available: []string{
+				"10.8.0", "10.11.11", "12.0ubu2604-ls48", "latest",
+			},
+			wantLatest:     "10.11.11",
+			wantBehind:     1,
+			wantCmp:        true,
+			wantNewerMajor: 12,
+		},
 	}
 
 	for _, tt := range tests {
@@ -216,6 +225,82 @@ func TestSelectLatest(t *testing.T) {
 			if got.Behind != tt.wantBehind {
 				t.Errorf("Behind = %d, want %d", got.Behind, tt.wantBehind)
 			}
+			if got.NewerMajor != tt.wantNewerMajor {
+				t.Errorf("NewerMajor = %d, want %d", got.NewerMajor, tt.wantNewerMajor)
+			}
 		})
 	}
+}
+
+func TestNewerMajor(t *testing.T) {
+	t.Run("notes an unreachable major line", func(t *testing.T) {
+		r := SelectLatest("10.8.0", []string{"10.11.11", "12.0ubu2604-ls48"})
+		if r.NewerMajor != 12 {
+			t.Errorf("NewerMajor = %d, want 12", r.NewerMajor)
+		}
+	})
+
+	t.Run("silent when the recommendation already covers it", func(t *testing.T) {
+		r := SelectLatest("13.4", []string{"13.4", "16.2", "18.6"})
+		if r.NewerMajor != 0 {
+			t.Errorf("NewerMajor = %d, want 0 (18.6 is already recommended)", r.NewerMajor)
+		}
+	})
+
+	t.Run("silent within one major line", func(t *testing.T) {
+		r := SelectLatest("1.20", []string{"1.20", "1.28", "1.31"})
+		if r.NewerMajor != 0 {
+			t.Errorf("NewerMajor = %d, want 0", r.NewerMajor)
+		}
+	})
+
+	t.Run("calendar tags do not count as a newer major", func(t *testing.T) {
+		r := SelectLatest("10.8.0", []string{"10.11.11", "2024.01.02"})
+		if r.NewerMajor != 0 {
+			t.Errorf("NewerMajor = %d, want 0 (2024 is a date, not a major)", r.NewerMajor)
+		}
+	})
+
+	// Every case below came from real registry data that produced a false
+	// positive on the first implementation.
+
+	t.Run("datestamp tags are not major versions", func(t *testing.T) {
+		r := SelectLatest("3.14", []string{"3.24", "20260805", "20260805.1"})
+		if r.NewerMajor != 0 {
+			t.Errorf("NewerMajor = %d, want 0 (20260805 is a datestamp)", r.NewerMajor)
+		}
+	})
+
+	t.Run("build counters are not major versions", func(t *testing.T) {
+		r := SelectLatest("8.4.0", []string{"8.4.0", "667", "667.1"})
+		if r.NewerMajor != 0 {
+			t.Errorf("NewerMajor = %d, want 0 (667 is a build counter)", r.NewerMajor)
+		}
+	})
+
+	t.Run("single-component tags never qualify", func(t *testing.T) {
+		r := SelectLatest("10.8.0", []string{"10.11.11", "11", "12"})
+		if r.NewerMajor != 0 {
+			t.Errorf("NewerMajor = %d, want 0 (bare majors are too weak a signal)", r.NewerMajor)
+		}
+	})
+
+	t.Run("a jump of more than two majors is implausible", func(t *testing.T) {
+		r := SelectLatest("1.20", []string{"1.31", "9.0.1"})
+		if r.NewerMajor != 0 {
+			t.Errorf("NewerMajor = %d, want 0 (1 to 9 is not a next line)", r.NewerMajor)
+		}
+	})
+}
+
+func equalInts(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
