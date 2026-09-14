@@ -708,6 +708,8 @@ func runServe(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	addr := fs.String("listen", "127.0.0.1:8080", "address to listen on")
 	dbPath := fs.String("db", "", "path to the database (default: XDG data dir)")
+	allowMute := fs.Bool("allow-mute", false,
+		"allow muting from the dashboard when listening beyond loopback (there is no login)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -718,9 +720,25 @@ func runServe(args []string) error {
 	}
 	defer func() { _ = db.Close() }()
 
-	srv, err := web.NewServer(db, version)
+	// On loopback only this machine can reach the dashboard, so muting is
+	// on and the Host check guards against DNS rebinding. Beyond loopback
+	// anyone on the network could mute, so that takes an explicit flag.
+	loopback := web.IsLoopback(*addr)
+	opts := web.Options{
+		AllowMute:    loopback || *allowMute,
+		LoopbackOnly: loopback,
+	}
+
+	srv, err := web.NewServer(db, version, opts)
 	if err != nil {
 		return err
+	}
+
+	switch {
+	case !opts.AllowMute:
+		fmt.Println("muting from the dashboard is off: listening beyond loopback without --allow-mute")
+	case !loopback:
+		fmt.Printf("warning: anyone who can reach %s can mute findings\n", *addr)
 	}
 
 	httpSrv := &http.Server{

@@ -30,57 +30,185 @@
   </div>
 </section>
 
-<table class="assets">
-  <thead>
-    <tr>
-      <th>Asset</th>
-      <th>Image</th>
-      <th>Version</th>
-      <th>Latest</th>
-      <th class="num">Behind</th>
-      <th>Support</th>
-      <th class="num">For</th>
-    </tr>
-  </thead>
-  <tbody>
-    {{ range .Assets }}
-    <tr class="row-{{ .SupportState }}">
-      <td class="name">
-        {{ .Name }}
-        {{ if .ShowState }}<span class="chip chip-idle">{{ .State }}</span>{{ end }}
-      </td>
-      <td class="mono dim">{{ .Repository }}</td>
-      <td class="mono">
-        {{ .Version }}
-        {{ if .FromLabel }}<span class="chip" title="version read from the OCI image label, not the tag">label</span>{{ end }}
-      </td>
-      <td class="mono dim">
-        {{ .Latest }}
-        {{ if .NewerMajor }}<span class="chip chip-note" title="a {{ .NewerMajor }}.x line exists but is not comparable to your tag">{{ .NewerMajor }}.x</span>{{ end }}
-      </td>
-      <td class="num">
-        {{ if .HasBehind }}
-          <span class="behind behind-{{ .BehindBand }}">{{ .Behind }}</span>
-        {{ else }}
-          <span class="dim">&ndash;</span>
-        {{ end }}
-      </td>
-      <td>
-        <span class="badge badge-{{ .SupportState }}">{{ .SupportText }}</span>
-        {{ if .SupportDetail }}<span class="detail">{{ .SupportDetail }}</span>{{ end }}
-      </td>
-      <td class="num age" title="{{ .AgeTitle }}">{{ .Age }}</td>
-    </tr>
+{{/* Shown only when the latest scan changed something. A quiet scan is
+     the normal, healthy outcome and gets no panel. */}}
+{{ if .New }}
+<section class="attention">
+  <h2>New since the previous scan</h2>
+  <ul>
+    {{ range .New }}
+    <li>
+      <span class="sev sev-{{ .Severity }}">{{ .Severity }}</span>
+      <a class="name" href="#finding-{{ .ID }}">{{ .Asset }}</a>
+      <span class="dim">{{ .Detail }}</span>
+    </li>
     {{ end }}
-  </tbody>
-</table>
-
-{{ if .Summary.Unknown }}
-<p class="note">
-  {{ .Summary.Unknown }} of {{ .Summary.Total }} assets have no published lifecycle
-  data. endoflife.date tracks mainstream products; absence means unknown, not safe.
-</p>
+  </ul>
+</section>
 {{ end }}
+
+<section class="section">
+  <h2>Open findings <span class="count">{{ len .Open }}</span></h2>
+
+  {{ if .Resolved }}
+  <p class="resolved-note">{{ .Resolved }} resolved in this scan</p>
+  {{ end }}
+
+  {{ if .Open }}
+  <table class="register">
+    <thead>
+      <tr>
+        <th>Severity</th>
+        <th>Asset</th>
+        <th>Finding</th>
+        <th class="num">Open for</th>
+        {{ if $.MuteEnabled }}<th></th>{{ end }}
+      </tr>
+    </thead>
+    <tbody>
+      {{ range .Open }}
+      <tr id="finding-{{ .ID }}">
+        <td><span class="sev sev-{{ .Severity }}">{{ .Severity }}</span></td>
+        <td class="name">
+          {{ .Asset }}
+          {{ if .New }}<span class="chip chip-new">new</span>{{ end }}
+          {{ if .Unobserved }}<span class="chip" title="not seen in the latest scan; findings only resolve for assets a scan still sees">no longer observed</span>{{ end }}
+        </td>
+        <td><span class="label">{{ .Label }}</span> {{ .Detail }}</td>
+        <td class="num age" title="{{ .OpenTitle }}">{{ .OpenFor }}</td>
+        {{ if $.MuteEnabled }}
+        <td class="actions">
+          <details class="mute"{{ if .FormError }} open{{ end }}>
+            <summary>Mute&hellip;</summary>
+            <form method="post" action="/findings/{{ .ID }}/mute">
+              <label>
+                <span>Reason</span>
+                <input name="reason" required value="{{ .FormReason }}" placeholder="isolated, no external access">
+              </label>
+              <label>
+                <span>Until</span>
+                <input name="until" required value="{{ .FormUntil }}" placeholder="90d or 2026-12-01">
+              </label>
+              {{ if .FormError }}<p class="form-error">{{ .FormError }}</p>{{ end }}
+              <button type="submit">Mute</button>
+            </form>
+          </details>
+        </td>
+        {{ end }}
+      </tr>
+      {{ end }}
+    </tbody>
+  </table>
+
+  {{ if not $.MuteEnabled }}
+  <p class="note">
+    Muting from the dashboard is off because it listens beyond loopback and has
+    no login. Use <code>altlast mute</code>, or restart with <code>--allow-mute</code>.
+  </p>
+  {{ end }}
+
+  {{ else }}
+  <p class="dim">No open findings.</p>
+  {{ end }}
+</section>
+
+{{ if .Muted }}
+<details class="section muted-section">
+  <summary><h2>Muted <span class="count">{{ len .Muted }}</span></h2></summary>
+
+  <table class="register">
+    <thead>
+      <tr>
+        <th>Severity</th>
+        <th>Asset</th>
+        <th>Finding</th>
+        <th>Reason</th>
+        <th>Expires</th>
+        {{ if $.MuteEnabled }}<th></th>{{ end }}
+      </tr>
+    </thead>
+    <tbody>
+      {{ range .Muted }}
+      <tr>
+        <td><span class="sev sev-{{ .Severity }}">{{ .Severity }}</span></td>
+        <td class="name">
+          {{ .Asset }}
+          {{ if .Unobserved }}<span class="chip" title="not seen in the latest scan">no longer observed</span>{{ end }}
+        </td>
+        <td><span class="label">{{ .Label }}</span> {{ .Detail }}</td>
+        <td>{{ .MuteReason }}</td>
+        <td class="mono">{{ .MuteExpires }} <span class="dim">{{ .MuteLeft }}</span></td>
+        {{ if $.MuteEnabled }}
+        <td class="actions">
+          {{ if .MuteID }}
+          <form method="post" action="/mutes/{{ .MuteID }}/unmute">
+            <button type="submit">Unmute</button>
+          </form>
+          {{ end }}
+        </td>
+        {{ end }}
+      </tr>
+      {{ end }}
+    </tbody>
+  </table>
+</details>
+{{ end }}
+
+<section class="section">
+  <h2>Assets</h2>
+
+  <table class="assets">
+    <thead>
+      <tr>
+        <th>Asset</th>
+        <th>Image</th>
+        <th>Version</th>
+        <th>Latest</th>
+        <th class="num">Behind</th>
+        <th>Support</th>
+        <th class="num">For</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{ range .Assets }}
+      <tr class="row-{{ .SupportState }}">
+        <td class="name">
+          {{ .Name }}
+          {{ if .ShowState }}<span class="chip chip-idle">{{ .State }}</span>{{ end }}
+        </td>
+        <td class="mono dim">{{ .Repository }}</td>
+        <td class="mono">
+          {{ .Version }}
+          {{ if .FromLabel }}<span class="chip" title="version read from the OCI image label, not the tag">label</span>{{ end }}
+        </td>
+        <td class="mono dim">
+          {{ .Latest }}
+          {{ if .NewerMajor }}<span class="chip chip-note" title="a {{ .NewerMajor }}.x line exists but is not comparable to your tag">{{ .NewerMajor }}.x</span>{{ end }}
+        </td>
+        <td class="num">
+          {{ if .HasBehind }}
+            <span class="behind behind-{{ .BehindBand }}">{{ .Behind }}</span>
+          {{ else }}
+            <span class="dim">&ndash;</span>
+          {{ end }}
+        </td>
+        <td>
+          <span class="badge badge-{{ .SupportState }}">{{ .SupportText }}</span>
+          {{ if .SupportDetail }}<span class="detail">{{ .SupportDetail }}</span>{{ end }}
+        </td>
+        <td class="num age" title="{{ .AgeTitle }}">{{ .Age }}</td>
+      </tr>
+      {{ end }}
+    </tbody>
+  </table>
+
+  {{ if .Summary.Unknown }}
+  <p class="note">
+    {{ .Summary.Unknown }} of {{ .Summary.Total }} assets have no published lifecycle
+    data. endoflife.date tracks mainstream products; absence means unknown, not safe.
+  </p>
+  {{ end }}
+</section>
 
 {{ end }}
 {{ end }}
