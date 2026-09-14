@@ -78,13 +78,27 @@ func (c *tagCache) put(registry, repository string, tags []string) error {
 
 	// Write to a temporary file and rename, so an interrupted write never
 	// leaves a half-written cache file behind. Rename is atomic on POSIX.
+	//
+	// The temporary name must be unique per write, not per repository: two
+	// containers running the same image are resolved concurrently, and a
+	// shared name would let one writer rename the other's partial file.
 	final := c.path(registry, repository)
-	tmp := final + ".tmp"
+	tmp, err := os.CreateTemp(c.dir, filepath.Base(final)+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("creating cache file: %w", err)
+	}
+	// After a successful rename the temporary name no longer exists and this
+	// fails harmlessly. On any earlier failure it removes the partial file.
+	defer func() { _ = os.Remove(tmp.Name()) }()
 
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
 		return fmt.Errorf("writing cache: %w", err)
 	}
-	if err := os.Rename(tmp, final); err != nil {
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("writing cache: %w", err)
+	}
+	if err := os.Rename(tmp.Name(), final); err != nil {
 		return fmt.Errorf("finalising cache: %w", err)
 	}
 	return nil
