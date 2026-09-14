@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/osk4r8088/altlast/internal/findings"
 )
@@ -230,4 +231,84 @@ func (s *Store) queryFindings(ctx context.Context, query string, args ...any) ([
 		return nil, fmt.Errorf("iterating findings: %w", err)
 	}
 	return out, nil
+}
+
+// FindOpen locates a single open finding by asset name and type, so a mute
+// can name a finding the way a person would: "mute the EOL finding on
+// postgres". The key is resolved from what is actually open, since muting
+// a finding you cannot currently see is not a real use case.
+//
+// The asset name may be a substring, as container names are long and
+// mostly boilerplate. An ambiguous match is an error rather than a guess.
+func (s *Store) FindOpen(ctx context.Context, assetPattern, typ string) (FindingRecord, error) {
+	matches, err := s.queryFindings(ctx, `
+		SELECT f.id, f.asset_id, a.name, f.type, f.key, f.severity,
+		       COALESCE(f.detail, ''), f.first_seen, f.last_seen, f.resolved_at,
+		       f.first_scan_id, f.last_scan_id,
+		       '', ''
+		FROM findings f
+		JOIN assets a ON a.id = f.asset_id
+		WHERE f.resolved_at IS NULL
+		  AND f.type = ?
+		  AND a.name LIKE '%' || ? || '%'
+		ORDER BY a.name`, typ, assetPattern)
+	if err != nil {
+		return FindingRecord{}, err
+	}
+
+	switch len(matches) {
+	case 0:
+		return FindingRecord{}, fmt.Errorf(
+			"no open %s finding matching %q", typ, assetPattern)
+	case 1:
+		return matches[0], nil
+	default:
+		names := make([]string, 0, len(matches))
+		for _, m := range matches {
+			names = append(names, m.Asset)
+		}
+		return FindingRecord{}, fmt.Errorf(
+			"%q matches %d assets (%s): be more specific",
+			assetPattern, len(matches), strings.Join(names, ", "))
+	}
+}
+
+// AssetByName resolves an asset name pattern to its identity, for
+// unmuting, where no open finding need exist.
+func (s *Store) AssetByName(ctx context.Context, pattern string) (host, kind, name string, err error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT host, kind, name FROM assets WHERE name LIKE '%' || ? || '%' ORDER BY name`,
+		pattern)
+	if err != nil {
+		return "", "", "", fmt.Errorf("looking up asset: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	type asset struct{ host, kind, name string }
+	var found []asset
+
+	for rows.Next() {
+		var a asset
+		if err := rows.Scan(&a.host, &a.kind, &a.name); err != nil {
+			return "", "", "", fmt.Errorf("scanning asset: %w", err)
+		}
+		found = append(found, a)
+	}
+	if err := rows.Err(); err != nil {
+		return "", "", "", fmt.Errorf("iterating assets: %w", err)
+	}
+
+	switch len(found) {
+	case 0:
+		return "", "", "", fmt.Errorf("%w matching %q", ErrNoSuchAsset, pattern)
+	case 1:
+		return found[0].host, found[0].kind, found[0].name, nil
+	default:
+		names := make([]string, 0, len(found))
+		for _, a := range found {
+			names = append(names, a.name)
+		}
+		return "", "", "", fmt.Errorf("%q matches %d assets (%s): be more specific",
+			pattern, len(found), strings.Join(names, ", "))
+	}
 }

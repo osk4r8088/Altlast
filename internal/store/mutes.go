@@ -41,59 +41,6 @@ func (m Mute) DaysLeft() int {
 	return int(time.Until(t).Hours() / 24)
 }
 
-// AddMute records a mute, replacing any existing one for the same
-// identity. Re-muting is a deliberate act, so it resets the expiry and the
-// reason rather than failing.
-func (s *Store) AddMute(ctx context.Context, host, kind, name, typ, key, reason string, until time.Time) error {
-	if reason == "" {
-		return errors.New("a mute needs a reason")
-	}
-	if until.Before(time.Now()) {
-		return errors.New("a mute needs an expiry in the future")
-	}
-
-	assetID, err := s.assetID(ctx, host, kind, name)
-	if err != nil {
-		return fmt.Errorf("%w: %s", ErrNoSuchAsset, name)
-	}
-
-	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO mutes (asset_id, type, key, reason, created_at, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT (asset_id, type, key) DO UPDATE SET
-			reason = excluded.reason,
-			created_at = excluded.created_at,
-			expires_at = excluded.expires_at,
-			expiry_reported_at = NULL`,
-		assetID, typ, key, reason, now(),
-		until.UTC().Format(time.RFC3339))
-	if err != nil {
-		return fmt.Errorf("recording mute: %w", err)
-	}
-	return nil
-}
-
-// RemoveMute deletes a mute. It reports whether one existed.
-func (s *Store) RemoveMute(ctx context.Context, host, kind, name, typ, key string) (bool, error) {
-	assetID, err := s.assetID(ctx, host, kind, name)
-	if err != nil {
-		return false, fmt.Errorf("%w: %s", ErrNoSuchAsset, name)
-	}
-
-	res, err := s.db.ExecContext(ctx,
-		`DELETE FROM mutes WHERE asset_id = ? AND type = ? AND key = ?`,
-		assetID, typ, key)
-	if err != nil {
-		return false, fmt.Errorf("removing mute: %w", err)
-	}
-
-	n, err := res.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("checking removal: %w", err)
-	}
-	return n > 0, nil
-}
-
 // Mutes returns every mute, soonest to expire first.
 func (s *Store) Mutes(ctx context.Context) ([]Mute, error) {
 	rows, err := s.db.QueryContext(ctx, `
@@ -195,4 +142,56 @@ func ParseDuration(s string) (time.Time, error) {
 	default:
 		return time.Time{}, fmt.Errorf("unknown unit %q: use d, w, mo, or y", unit)
 	}
+}
+
+// MuteFinding records a mute for an already-located finding, which is how
+// the CLI works: find the open finding first, then mute exactly that.
+func (s *Store) MuteFinding(ctx context.Context, f FindingRecord, reason string, until time.Time) error {
+	if reason == "" {
+		return errors.New("a mute needs a reason")
+	}
+	if until.Before(time.Now()) {
+		return errors.New("a mute needs an expiry in the future")
+	}
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO mutes (asset_id, type, key, reason, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT (asset_id, type, key) DO UPDATE SET
+			reason = excluded.reason,
+			created_at = excluded.created_at,
+			expires_at = excluded.expires_at,
+			expiry_reported_at = NULL`,
+		f.AssetID, f.Type, f.Key, reason, now(),
+		until.UTC().Format(time.RFC3339))
+	if err != nil {
+		return fmt.Errorf("recording mute: %w", err)
+	}
+	return nil
+}
+
+// UnmuteAsset removes every mute of a given type on an asset, matched by
+// name pattern. It reports how many were removed.
+func (s *Store) UnmuteAsset(ctx context.Context, pattern, typ string) (int, error) {
+	host, kind, name, err := s.AssetByName(ctx, pattern)
+	if err != nil {
+		return 0, err
+	}
+
+	assetID, err := s.assetID(ctx, host, kind, name)
+	if err != nil {
+		return 0, err
+	}
+
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM mutes WHERE asset_id = ? AND type = ?`, assetID, typ)
+	if err != nil {
+		return 0, fmt.Errorf("removing mute: %w", err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("checking removal: %w", err)
+	}
+	return int(n), nil
 }
