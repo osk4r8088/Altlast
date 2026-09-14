@@ -3,11 +3,16 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/osk4r8088/altlast/internal/findings"
 )
+
+// ErrNoSuchFinding is returned when a finding is not open, either because
+// it never existed or because a later scan resolved it.
+var ErrNoSuchFinding = errors.New("no such open finding")
 
 // FindingRecord is a finding as stored, with its lifecycle timestamps.
 type FindingRecord struct {
@@ -181,6 +186,27 @@ func (s *Store) OpenFindings(ctx context.Context) ([]FindingRecord, error) {
 			CASE f.severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
 			f.first_seen,
 			a.name`, now())
+}
+
+// OpenFinding returns one open finding by id, for actions that name a
+// finding exactly, such as the dashboard's mute form. Mute state is not
+// loaded.
+func (s *Store) OpenFinding(ctx context.Context, id int64) (FindingRecord, error) {
+	matches, err := s.queryFindings(ctx, `
+		SELECT f.id, f.asset_id, a.name, f.type, f.key, f.severity,
+		       COALESCE(f.detail, ''), f.first_seen, f.last_seen, f.resolved_at,
+		       f.first_scan_id, f.last_scan_id,
+		       '', ''
+		FROM findings f
+		JOIN assets a ON a.id = f.asset_id
+		WHERE f.id = ? AND f.resolved_at IS NULL`, id)
+	if err != nil {
+		return FindingRecord{}, err
+	}
+	if len(matches) == 0 {
+		return FindingRecord{}, fmt.Errorf("finding %d: %w", id, ErrNoSuchFinding)
+	}
+	return matches[0], nil
 }
 
 // NewInScan returns findings that opened during a given scan. An empty

@@ -170,6 +170,22 @@ func (s *Store) MuteFinding(ctx context.Context, f FindingRecord, reason string,
 	return nil
 }
 
+// DeleteMute removes one mute by id and reports whether it existed. Unlike
+// UnmuteAsset it cannot match more than intended, which suits a button
+// beside a specific mute.
+func (s *Store) DeleteMute(ctx context.Context, id int64) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM mutes WHERE id = ?`, id)
+	if err != nil {
+		return false, fmt.Errorf("removing mute %d: %w", id, err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("checking removal: %w", err)
+	}
+	return n > 0, nil
+}
+
 // UnmuteAsset removes every mute of a given type on an asset, matched by
 // name pattern. It reports how many were removed.
 func (s *Store) UnmuteAsset(ctx context.Context, pattern, typ string) (int, error) {

@@ -46,7 +46,11 @@ func Open(path string) (*Store, error) {
 		path = filepath.Join(dir, "altlast.db")
 	}
 
-	dsn := path + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)"
+	// busy_timeout makes a writer wait for the lock instead of failing at
+	// once. Without it, muting from the dashboard while a scheduled scan is
+	// writing fails with "database is locked". It comes first so it also
+	// covers switching the journal mode.
+	dsn := path + "?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)"
 
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
