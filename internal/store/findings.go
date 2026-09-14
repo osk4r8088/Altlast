@@ -24,6 +24,9 @@ type FindingRecord struct {
 
 	FirstScanID int64
 	LastScanID  int64
+	Muted       bool
+	MuteReason  string
+	MuteExpires string
 }
 
 // Open reports whether the finding is still current.
@@ -145,28 +148,40 @@ func (s *Store) assetID(ctx context.Context, host, kind, name string) (int64, er
 	return id, nil
 }
 
-// OpenFindings returns every unresolved finding, most severe first.
+// OpenFindings returns every unresolved finding, most severe first, with
+// mute state attached. Muting is applied at read time rather than at
+// reconciliation: a muted finding still accumulates history, so unmuting
+// reveals how long it has really been open.
 func (s *Store) OpenFindings(ctx context.Context) ([]FindingRecord, error) {
 	return s.queryFindings(ctx, `
 		SELECT f.id, f.asset_id, a.name, f.type, f.key, f.severity,
 		       COALESCE(f.detail, ''), f.first_seen, f.last_seen, f.resolved_at,
-		       f.first_scan_id, f.last_scan_id
+		       f.first_scan_id, f.last_scan_id,
+		       COALESCE(m.reason, ''), COALESCE(m.expires_at, '')
 		FROM findings f
 		JOIN assets a ON a.id = f.asset_id
+		LEFT JOIN mutes m
+		       ON m.asset_id = f.asset_id AND m.type = f.type AND m.key = f.key
+		      AND m.expires_at > ?
 		WHERE f.resolved_at IS NULL
 		ORDER BY
 			CASE f.severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
 			f.first_seen,
-			a.name`)
+			a.name`, now())
 }
 
 // NewInScan returns findings that opened during a given scan. An empty
 // result is the desired steady state: most scans should find nothing new.
+//
+// The two empty strings are the mute reason and expiry, which
+// queryFindings expects as the last two columns. A newly opened finding
+// has no mute state to report.
 func (s *Store) NewInScan(ctx context.Context, scanID int64) ([]FindingRecord, error) {
 	return s.queryFindings(ctx, `
 		SELECT f.id, f.asset_id, a.name, f.type, f.key, f.severity,
 		       COALESCE(f.detail, ''), f.first_seen, f.last_seen, f.resolved_at,
-		       f.first_scan_id, f.last_scan_id
+		       f.first_scan_id, f.last_scan_id,
+		       '', ''
 		FROM findings f
 		JOIN assets a ON a.id = f.asset_id
 		WHERE f.first_scan_id = ?
@@ -180,14 +195,17 @@ func (s *Store) ResolvedInScan(ctx context.Context, scanID int64) ([]FindingReco
 	return s.queryFindings(ctx, `
 		SELECT f.id, f.asset_id, a.name, f.type, f.key, f.severity,
 		       COALESCE(f.detail, ''), f.first_seen, f.last_seen, f.resolved_at,
-		       f.first_scan_id, f.last_scan_id
+		       f.first_scan_id, f.last_scan_id,
+		       '', ''
 		FROM findings f
 		JOIN assets a ON a.id = f.asset_id
 		WHERE f.resolved_at IS NOT NULL AND f.last_scan_id = ?
 		ORDER BY a.name`, scanID)
 }
 
-// queryFindings runs a findings query and scans the rows.
+// queryFindings runs a findings query and scans the rows. Queries must
+// select the mute reason and expiry as their last two columns; an empty
+// reason means unmuted.
 func (s *Store) queryFindings(ctx context.Context, query string, args ...any) ([]FindingRecord, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -200,10 +218,11 @@ func (s *Store) queryFindings(ctx context.Context, query string, args ...any) ([
 		var f FindingRecord
 		err := rows.Scan(&f.ID, &f.AssetID, &f.Asset, &f.Type, &f.Key,
 			&f.Severity, &f.Detail, &f.FirstSeen, &f.LastSeen, &f.ResolvedAt,
-			&f.FirstScanID, &f.LastScanID)
+			&f.FirstScanID, &f.LastScanID, &f.MuteReason, &f.MuteExpires)
 		if err != nil {
 			return nil, fmt.Errorf("scanning finding: %w", err)
 		}
+		f.Muted = f.MuteReason != ""
 		out = append(out, f)
 	}
 
