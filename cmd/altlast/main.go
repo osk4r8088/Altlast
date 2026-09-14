@@ -9,8 +9,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
 	"text/tabwriter"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/osk4r8088/altlast/internal/collect"
 	"github.com/osk4r8088/altlast/internal/enrich"
@@ -138,12 +141,23 @@ func runScan(args []string) error {
 	dbPath := fs.String("db", "", "path to the database (default: XDG data dir)")
 	noStore := fs.Bool("no-store", false, "print results without recording them")
 	quiet := fs.Bool("quiet", false, "print only what changed")
+	// Deliberately low. Docker Hub rate limits per source IP, and behind NAT
+	// that IP is shared with everyone else on the network.
+	concurrency := fs.Int("concurrency", 4, "how many assets to check upstream at once")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *concurrency < 1 {
+		return fmt.Errorf("--concurrency must be at least 1")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
+
+	// Ctrl-C cancels the context instead of killing the process, so requests
+	// in flight return promptly and the scan can refuse to record itself.
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
+	defer stop()
 
 	host, _ := os.Hostname()
 
@@ -183,9 +197,19 @@ func runScan(args []string) error {
 		fmt.Fprintln(w, "NAME\tIMAGE\tCURRENT\tLATEST\tBEHIND\tSUPPORT")
 	}
 
+	results := lookupAll(ctx, resolver, eol, assets, *concurrency)
+
+	// A cancelled scan has an error for every lookup that was still in
+	// flight. Recording it would resolve, by absence, findings that were
+	// never actually re-checked, and reopen them next scan with their
+	// history lost.
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("scan cancelled before upstream checks finished: %w", err)
+	}
+
 	var errCount int
 
-	for _, a := range assets {
+	for i, a := range assets {
 		obs := store.Observation{
 			Host:          host,
 			Kind:          string(a.Kind),
@@ -203,7 +227,7 @@ func runScan(args []string) error {
 		var latest string
 		behind := "-"
 
-		rel, resErr := resolver.Resolve(ctx, a.Registry, a.Repository, a.Version)
+		rel, resErr := results[i].rel, results[i].resErr
 		switch {
 		case resErr != nil:
 			errCount++
@@ -244,7 +268,7 @@ func runScan(args []string) error {
 		}
 
 		support := "-"
-		lc, lcErr := eol.Lookup(ctx, a.Repository, a.Version)
+		lc, lcErr := results[i].lc, results[i].lcErr
 		if lcErr != nil {
 			obs.EOLError = lcErr.Error()
 			support = "lookup failed"
@@ -316,6 +340,52 @@ func runScan(args []string) error {
 	}
 
 	return reportChanges(ctx, db, scanID)
+}
+
+// lookup is everything a scan learns from upstream about one asset.
+type lookup struct {
+	rel    resolve.Release
+	resErr error
+	lc     enrich.Lifecycle
+	lcErr  error
+}
+
+// lookupAll checks every asset upstream, at most limit at a time, and
+// returns the results in the same order as assets.
+//
+// Only the network round trips run concurrently. Printing and recording
+// stay serial in the caller: SQLite has a single writer, tabwriter is not
+// safe for concurrent use, and iterating results by index keeps the output
+// order identical to a serial scan.
+func lookupAll(
+	ctx context.Context, resolver resolve.Resolver, eol *enrich.EOLClient,
+	assets []collect.Asset, limit int,
+) []lookup {
+	results := make([]lookup, len(assets))
+
+	// A plain Group, not errgroup.WithContext: that variant cancels every
+	// other lookup when one fails, and one unreachable image must not stop
+	// the rest of the scan.
+	var g errgroup.Group
+	g.SetLimit(limit)
+
+	for i, a := range assets {
+		g.Go(func() error {
+			var r lookup
+			r.rel, r.resErr = resolver.Resolve(ctx, a.Registry, a.Repository, a.Version)
+			r.lc, r.lcErr = eol.Lookup(ctx, a.Repository, a.Version)
+
+			// Each goroutine writes only its own element, so no lock is needed.
+			results[i] = r
+
+			// Per-asset failures are data recorded on the row, never a reason
+			// to stop, so this never returns an error.
+			return nil
+		})
+	}
+
+	_ = g.Wait() // always nil, see above
+	return results
 }
 
 // reportChanges prints what a scan changed. Silence is the goal: a scan
