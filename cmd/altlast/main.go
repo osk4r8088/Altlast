@@ -311,7 +311,7 @@ func runScan(args []string) error {
 
 		// Findings are reconciled after the observation, because opening
 		// one needs the asset identity that RecordObservation creates.
-		found := findings.Evaluate(findings.Input{
+		in := findings.Input{
 			Version:       a.Version,
 			SupportState:  obs.SupportState,
 			EOLCycle:      obs.EOLCycle,
@@ -320,9 +320,14 @@ func runScan(args []string) error {
 			NewerMajor:    obs.NewerMajor,
 			NewerMajorTag: obs.NewerMajorTag,
 			ResolveError:  obs.ResolveError,
-		})
+			EOLError:      obs.EOLError,
+		}
 
-		if err := db.ReconcileFindings(ctx, scanID, host, string(a.Kind), a.Name, found); err != nil {
+		// Unchecked types are those whose lookup failed this scan, so their
+		// absence from found must not resolve anything.
+		found, unchecked := findings.Evaluate(in), findings.Unchecked(in)
+
+		if err := db.ReconcileFindings(ctx, scanID, host, string(a.Kind), a.Name, found, unchecked); err != nil {
 			return err
 		}
 	}

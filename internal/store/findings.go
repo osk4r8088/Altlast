@@ -41,8 +41,14 @@ func (f FindingRecord) Open() bool { return !f.ResolvedAt.Valid }
 // case is what makes time-to-resolve measurable, and it works only because
 // resolution is inferred from absence rather than requiring anyone to mark
 // anything as fixed.
+//
+// Absence is only evidence when the check actually ran. Open findings whose
+// type is in unchecked are left exactly as they were, neither resolved nor
+// advanced: the lookup behind them failed, and last_seen records when a
+// finding was observed, not when we last tried.
 func (s *Store) ReconcileFindings(
-	ctx context.Context, scanID int64, host, kind, name string, current []findings.Finding,
+	ctx context.Context, scanID int64, host, kind, name string,
+	current []findings.Finding, unchecked []findings.Type,
 ) error {
 	assetID, err := s.assetID(ctx, host, kind, name)
 	if err != nil {
@@ -117,9 +123,15 @@ func (s *Store) ReconcileFindings(
 		}
 	}
 
-	// Anything open that this scan did not produce has been resolved.
+	skip := make(map[string]bool, len(unchecked))
+	for _, typ := range unchecked {
+		skip[string(typ)] = true
+	}
+
+	// Anything open that this scan did not produce, and could have, has
+	// been resolved.
 	for k, id := range open {
-		if seen[k] {
+		if seen[k] || skip[k.typ] {
 			continue
 		}
 		_, err := tx.ExecContext(ctx,

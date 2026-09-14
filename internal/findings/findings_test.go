@@ -76,6 +76,58 @@ func TestBehindIsNotAFinding(t *testing.T) {
 	}
 }
 
+func TestUnchecked(t *testing.T) {
+	tests := []struct {
+		name string
+		in   Input
+		want []Type
+	}{
+		{
+			name: "both lookups succeeded",
+			in:   Input{SupportState: "eol", EOLCycle: "13"},
+			want: nil,
+		},
+		{
+			// Unknown is a successful answer, not a failed lookup. Absence
+			// of an EOL finding here is real and may resolve one.
+			name: "unknown lifecycle is still checked",
+			in:   Input{SupportState: "unknown"},
+			want: nil,
+		},
+		{
+			name: "lifecycle lookup failed",
+			in:   Input{EOLError: "endoflife.date returned 503"},
+			want: []Type{TypeEOL, TypeEOLApproaching},
+		},
+		{
+			// The resolve_error finding itself is produced, so it is
+			// checked. Only what the registry would have told us is not.
+			name: "registry lookup failed",
+			in:   Input{SupportState: "eol", EOLCycle: "13", ResolveError: "connection refused"},
+			want: []Type{TypeNewerMajor},
+		},
+		{
+			name: "both lookups failed",
+			in:   Input{EOLError: "timeout", ResolveError: "timeout"},
+			want: []Type{TypeEOL, TypeEOLApproaching, TypeNewerMajor},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Unchecked(tt.in)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("type %d = %s, want %s", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
 func TestKeyDistinguishesCycles(t *testing.T) {
 	a := Evaluate(Input{SupportState: "eol", EOLCycle: "13", EOLDate: "2025-11-13"})
 	b := Evaluate(Input{SupportState: "eol", EOLCycle: "14", EOLDate: "2026-11-12"})

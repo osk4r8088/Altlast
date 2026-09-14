@@ -84,7 +84,10 @@ type Input struct {
 	NewerMajor    int
 	NewerMajorTag string
 
+	// ResolveError and EOLError are set when a lookup failed, as distinct
+	// from succeeding and finding nothing.
 	ResolveError string
+	EOLError     string
 }
 
 // Evaluate applies the rules to one observation.
@@ -143,5 +146,23 @@ func Evaluate(in Input) []Finding {
 		})
 	}
 
+	return out
+}
+
+// Unchecked returns the finding types this observation could not evaluate,
+// because the lookup that produces them failed.
+//
+// Evaluate producing no EOL finding normally means the asset is no longer
+// past end of life. After a failed lifecycle lookup it means only that we do
+// not know. Resolving an open finding on that basis would report it fixed,
+// then reopen it as new on the next successful scan with its history gone.
+func Unchecked(in Input) []Type {
+	var out []Type
+	if in.EOLError != "" {
+		out = append(out, TypeEOL, TypeEOLApproaching)
+	}
+	if in.ResolveError != "" {
+		out = append(out, TypeNewerMajor)
+	}
 	return out
 }
