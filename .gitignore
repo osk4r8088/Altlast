@@ -4,5 +4,5 @@ bin/
 *.db-wal
 .env
 *.env
-altlast
+/altlast
 dist/
