@@ -77,7 +77,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Rejects state-changing requests a browser marks as cross-site, so a
 	// page elsewhere cannot submit a hidden form that silences a finding.
-	var h http.Handler = http.NewCrossOriginProtection().Handler(mux)
+	h := http.NewCrossOriginProtection().Handler(mux)
 
 	if s.opts.LoopbackOnly {
 		h = requireLoopbackHost(h)
