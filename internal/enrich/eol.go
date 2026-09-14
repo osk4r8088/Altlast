@@ -84,9 +84,17 @@ type EOLClient struct {
 
 // NewEOLClient returns a client with an on-disk cache. Lifecycle data
 // changes rarely, so the TTL is generous.
-func NewEOLClient(ttl time.Duration) (*EOLClient, error) {
+//
+// wrap, when not nil, wraps the HTTP transport, for example to trace
+// requests.
+func NewEOLClient(ttl time.Duration, wrap func(http.RoundTripper) http.RoundTripper) (*EOLClient, error) {
 	if ttl <= 0 {
 		ttl = 24 * time.Hour
+	}
+
+	transport := http.DefaultTransport
+	if wrap != nil {
+		transport = wrap(transport)
 	}
 
 	cache, err := newJSONCache("eol", ttl)
@@ -100,7 +108,7 @@ func NewEOLClient(ttl time.Duration) (*EOLClient, error) {
 	}
 
 	return &EOLClient{
-		http:    &http.Client{Timeout: 20 * time.Second},
+		http:    &http.Client{Timeout: 20 * time.Second, Transport: transport},
 		cache:   cache,
 		catalog: cat,
 	}, nil

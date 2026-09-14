@@ -144,6 +144,7 @@ func runScan(args []string) error {
 	// Deliberately low. Docker Hub rate limits per source IP, and behind NAT
 	// that IP is shared with everyone else on the network.
 	concurrency := fs.Int("concurrency", 4, "how many assets to check upstream at once")
+	trace := fs.Bool("trace", false, "log upstream requests and lookup timings to stderr")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -159,19 +160,27 @@ func runScan(args []string) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 	defer stop()
 
+	// tr stays nil unless tracing; its methods are no-ops on nil.
+	var tr *tracer
+	if *trace {
+		tr = newTracer(os.Stderr)
+	}
+
 	host, _ := os.Hostname()
 
+	collectStart := time.Now()
 	assets, err := collect.NewDockerCollector(*socket, !*running).Collect(ctx)
 	if err != nil {
 		return err
 	}
+	tr.printf("collect: %d assets in %s", len(assets), time.Since(collectStart).Round(time.Millisecond))
 
-	resolver, err := resolve.NewRegistryResolver(*ttl)
+	resolver, err := resolve.NewRegistryResolver(*ttl, tr.wrap)
 	if err != nil {
 		return err
 	}
 
-	eol, err := enrich.NewEOLClient(0)
+	eol, err := enrich.NewEOLClient(0, tr.wrap)
 	if err != nil {
 		return err
 	}
@@ -197,7 +206,7 @@ func runScan(args []string) error {
 		fmt.Fprintln(w, "NAME\tIMAGE\tCURRENT\tLATEST\tBEHIND\tSUPPORT")
 	}
 
-	results := lookupAll(ctx, resolver, eol, assets, *concurrency)
+	results := lookupAll(ctx, tr, resolver, eol, assets, *concurrency)
 
 	// A cancelled scan has an error for every lookup that was still in
 	// flight. Recording it would resolve, by absence, findings that were
@@ -363,10 +372,11 @@ type lookup struct {
 // safe for concurrent use, and iterating results by index keeps the output
 // order identical to a serial scan.
 func lookupAll(
-	ctx context.Context, resolver resolve.Resolver, eol *enrich.EOLClient,
+	ctx context.Context, tr *tracer, resolver resolve.Resolver, eol *enrich.EOLClient,
 	assets []collect.Asset, limit int,
 ) []lookup {
 	results := make([]lookup, len(assets))
+	start := time.Now()
 
 	// A plain Group, not errgroup.WithContext: that variant cancels every
 	// other lookup when one fails, and one unreachable image must not stop
@@ -377,8 +387,14 @@ func lookupAll(
 	for i, a := range assets {
 		g.Go(func() error {
 			var r lookup
+			resStart := time.Now()
 			r.rel, r.resErr = resolver.Resolve(ctx, a.Registry, a.Repository, a.Version)
+			eolStart := time.Now()
 			r.lc, r.lcErr = eol.Lookup(ctx, a.Repository, a.Version)
+
+			tr.printf("lookup %s: registry %s, eol %s", a.Name,
+				eolStart.Sub(resStart).Round(time.Millisecond),
+				time.Since(eolStart).Round(time.Millisecond))
 
 			// Each goroutine writes only its own element, so no lock is needed.
 			results[i] = r
@@ -390,6 +406,9 @@ func lookupAll(
 	}
 
 	_ = g.Wait() // always nil, see above
+
+	tr.printf("lookups: %d assets in %s, %d requests, concurrency %d", len(assets),
+		time.Since(start).Round(time.Millisecond), tr.requestCount(), limit)
 	return results
 }
 

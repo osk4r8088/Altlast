@@ -3,6 +3,7 @@ package resolve
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -15,8 +16,9 @@ import (
 
 // RegistryResolver queries container registries for available tags.
 type RegistryResolver struct {
-	cache *tagCache
-	auth  authn.Keychain
+	cache     *tagCache
+	auth      authn.Keychain
+	transport http.RoundTripper
 }
 
 // NewRegistryResolver returns a resolver with an on-disk tag cache.
@@ -24,7 +26,11 @@ type RegistryResolver struct {
 // Authentication uses the ambient Docker config, so a prior `docker login`
 // is picked up automatically. That matters on Docker Hub, where anonymous
 // requests are rate limited per source IP.
-func NewRegistryResolver(ttl time.Duration) (*RegistryResolver, error) {
+//
+// wrap, when not nil, wraps the HTTP transport, for example to trace
+// requests. go-containerregistry still adds its retry and user-agent layers
+// around the result, and the registry auth handshake goes through it too.
+func NewRegistryResolver(ttl time.Duration, wrap func(http.RoundTripper) http.RoundTripper) (*RegistryResolver, error) {
 	if ttl <= 0 {
 		ttl = DefaultTTL
 	}
@@ -32,7 +38,13 @@ func NewRegistryResolver(ttl time.Duration) (*RegistryResolver, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &RegistryResolver{cache: c, auth: authn.DefaultKeychain}, nil
+
+	transport := remote.DefaultTransport
+	if wrap != nil {
+		transport = wrap(transport)
+	}
+
+	return &RegistryResolver{cache: c, auth: authn.DefaultKeychain, transport: transport}, nil
 }
 
 // Name implements Resolver.
@@ -81,6 +93,7 @@ func (r *RegistryResolver) tags(ctx context.Context, registry, repository string
 	tags, err := remote.List(repo,
 		remote.WithContext(ctx),
 		remote.WithAuthFromKeychain(r.auth),
+		remote.WithTransport(r.transport),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("listing tags for %s: %w", repo, err)
@@ -104,6 +117,7 @@ func (r *RegistryResolver) digest(ctx context.Context, registry, repository, tag
 	desc, err := remote.Head(ref,
 		remote.WithContext(ctx),
 		remote.WithAuthFromKeychain(r.auth),
+		remote.WithTransport(r.transport),
 	)
 	if err != nil {
 		return "", fmt.Errorf("fetching digest: %w", err)
